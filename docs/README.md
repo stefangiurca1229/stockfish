@@ -10,8 +10,9 @@ A Python project that wraps the [Stockfish](https://stockfishchess.org/) chess e
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Architecture](#architecture)
-- [Testing](#testing)
 - [API Reference](#api-reference)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
 
 ## Overview
 
@@ -21,6 +22,11 @@ This project integrates the Stockfish chess engine into a Python application, ex
 - Configuring engine options (threads, hash table size, etc.)
 - A terminal home screen to choose between playing against Stockfish or another player
 
+Key implementation details:
+- Non-blocking stdout reader (runs in a background thread)
+- FEN validation via `python-chess`
+- Configurable time limit per move
+
 ## Requirements
 
 - Python 3.9+
@@ -29,12 +35,26 @@ This project integrates the Stockfish chess engine into a Python application, ex
 
 ## Installation
 
-1. Install the Stockfish binary for your OS and note its path.
+1. Install the Stockfish binary for your OS:
+
+   **macOS (Homebrew)**
+   ```bash
+   brew install stockfish
+   ```
+
+   **Ubuntu/Debian**
+   ```bash
+   sudo apt-get install stockfish
+   ```
+
+   **Windows** — download from https://stockfishchess.org/download/
+
 2. Clone the repository:
    ```bash
    git clone https://github.com/stefangiurca1229/stockfish.git
    cd stockfish
    ```
+
 3. Install Python dependencies:
    ```bash
    pip install -r requirements.txt
@@ -47,7 +67,7 @@ This project integrates the Stockfish chess engine into a Python application, ex
 | Variable | Default | Description |
 |---|---|---|
 | `STOCKFISH_PATH` | `/usr/local/bin/stockfish` | Path to the Stockfish binary. Override with the `STOCKFISH_PATH` env var. |
-| `STOCKFISH_DEFAULT_OPTIONS` | `Threads=1, Hash=16` | UCI options passed to the engine on startup. |
+| `STOCKFISH_DEFAULT_OPTIONS` | `{"Threads": 1, "Hash": 16}` | UCI options passed to the engine on startup. |
 
 Override the binary path at runtime:
 ```bash
@@ -68,6 +88,17 @@ move = engine.suggest_move(fen, time_limit=1.0)
 print(move)  # e.g. "e2e4"
 
 engine.quit()
+```
+
+### Using custom engine options
+
+```python
+options = {
+    "Threads": 4,
+    "Hash": 128,
+    "Skill Level": 10,
+}
+engine = StockfishEngine(path="/usr/local/bin/stockfish", options=options)
 ```
 
 ### Home Screen (terminal UI)
@@ -92,6 +123,8 @@ choice = screen.select(1)  # "stockfish" or "player"
 │   ├── test_stockfish_engine.py
 │   └── test_home_screen.py
 ├── config.py                 # Engine path and default UCI options
+├── docs/
+│   └── README.md             # This file
 └── requirements.txt
 ```
 
@@ -109,32 +142,29 @@ Lifecycle:
 
 A pure-Python terminal menu. `render()` returns a formatted ASCII box; `select()` accepts an integer index or a string key/label.
 
-## Testing
-
-```bash
-pytest tests/
-```
-
-Integration tests that require the Stockfish binary are skipped automatically when the binary is not found. Set `STOCKFISH_PATH` to point at your binary to run them:
-
-```bash
-STOCKFISH_PATH=/usr/games/stockfish pytest tests/
-```
-
 ## API Reference
 
 ### `StockfishEngine(path, options=None)`
 
+Starts a Stockfish subprocess and initializes the UCI protocol.
+
 | Parameter | Type | Description |
 |---|---|---|
 | `path` | `str` | Absolute path to the Stockfish binary |
-| `options` | `dict` | UCI engine options (e.g. `{"Threads": 4, "Hash": 128}`) |
+| `options` | `dict` \| `None` | UCI engine options (e.g. `{"Threads": 4, "Hash": 128}`). Defaults to `{}`. |
 
 #### `suggest_move(fen, time_limit=1.0) -> str`
 
-Returns the best move in UCI notation (e.g. `"e2e4"`).
+Returns the best move in UCI format (e.g. `"e2e4"`, `"e7e8q"`).
 
-Raises `ValueError` for an invalid FEN string, `RuntimeError` if no move is returned within the time limit.
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fen` | `str` | — | A valid FEN string representing the board position. |
+| `time_limit` | `float` | `1.0` | Maximum search time in seconds. |
+
+Raises:
+- `ValueError` — if the FEN string is invalid.
+- `RuntimeError` — if Stockfish does not return a move within the time limit.
 
 #### `quit()`
 
@@ -158,3 +188,26 @@ Returns the ASCII menu string ready to print.
 Accepts an `int` (1-based index) or `str` (key or label). Invokes the button's callback if set. Returns the selected key.
 
 Raises `ValueError` for an out-of-range index or unrecognised string.
+
+## Testing
+
+Tests require a real Stockfish binary and are skipped automatically when it is not found.
+
+```bash
+pytest tests/
+```
+
+Set `STOCKFISH_PATH` to point at your binary:
+
+```bash
+STOCKFISH_PATH=/usr/games/stockfish pytest tests/
+```
+
+### Test coverage
+
+| Test | Description |
+|---|---|
+| `test_suggest_move_from_fen` | Verifies a legal UCI move is returned for the starting position. |
+| `test_invalid_fen_raises` | Ensures `ValueError` is raised for a malformed FEN. |
+| `test_time_limit` | Confirms a move is returned within the specified time limit. |
+| `test_quit_idempotent` | Ensures calling `quit()` multiple times does not raise. |
